@@ -10,11 +10,10 @@ import org.springframework.web.bind.annotation.RequestMapping;
 import org.springframework.web.bind.annotation.RestController;
 
 /**
- * Handles token lifecycle operations that don't require an existing valid JWT.
+ * Handles token lifecycle operations.
  *
- * POST /api/auth/refresh — exchanges a Keycloak refresh token for a new token pair.
- * This endpoint is intentionally unauthenticated: the caller's access token is
- * expired (or about to expire) when a refresh is needed.
+ * POST /api/auth/refresh — unauthenticated; exchanges an expired access token for a new pair.
+ * POST /api/auth/logout  — authenticated; revokes the refresh token at Keycloak.
  */
 @RestController
 @RequestMapping("/api/auth")
@@ -45,5 +44,29 @@ public class TokenController {
             return ResponseEntity.badRequest().build();
         }
         return ResponseEntity.ok(keycloakTokenService.refresh(request.refreshToken()));
+    }
+
+    /**
+     * Logs the current user out by revoking their refresh token at Keycloak.
+     *
+     * <pre>
+     * POST /api/auth/logout
+     * Authorization: Bearer &lt;valid-access-token&gt;
+     * Content-Type: application/json
+     *
+     * { "refreshToken": "&lt;keycloak-refresh-token&gt;" }
+     * </pre>
+     *
+     * Returns HTTP 204 No Content on success.
+     * Returns HTTP 400 if {@code refreshToken} is missing or blank.
+     * Returns HTTP 401 if no valid Bearer token is provided.
+     */
+    @PostMapping("/logout")
+    public ResponseEntity<Void> logout(@RequestBody RefreshTokenRequest request) {
+        if (request.refreshToken() == null || request.refreshToken().isBlank()) {
+            return ResponseEntity.badRequest().build();
+        }
+        keycloakTokenService.logout(request.refreshToken());
+        return ResponseEntity.noContent().build();
     }
 }

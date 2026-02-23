@@ -14,7 +14,10 @@ import org.springframework.web.client.RestClientResponseException;
 import com.example.authservice.config.SecurityConfig;
 
 import static org.mockito.ArgumentMatchers.anyString;
+import static org.mockito.Mockito.doNothing;
+import static org.mockito.Mockito.doThrow;
 import static org.mockito.Mockito.when;
+import static org.springframework.security.test.web.servlet.request.SecurityMockMvcRequestPostProcessors.jwt;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.post;
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.*;
 
@@ -70,6 +73,51 @@ class TokenControllerTest {
         mvc.perform(post("/api/auth/refresh")
                         .contentType(MediaType.APPLICATION_JSON)
                         .content("{\"refreshToken\":\"expired-token\"}"))
+                .andExpect(status().isUnauthorized());
+    }
+
+    // -------------------------------------------------------------------------
+    // Logout
+    // -------------------------------------------------------------------------
+
+    @Test
+    void logout_withValidToken_returns204() throws Exception {
+        doNothing().when(keycloakTokenService).logout(anyString());
+
+        mvc.perform(post("/api/auth/logout")
+                        .with(jwt())
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content("{\"refreshToken\":\"valid-refresh-token\"}"))
+                .andExpect(status().isNoContent());
+    }
+
+    @Test
+    void logout_missingRefreshToken_returns400() throws Exception {
+        mvc.perform(post("/api/auth/logout")
+                        .with(jwt())
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content("{\"refreshToken\":\"\"}"))
+                .andExpect(status().isBadRequest());
+    }
+
+    @Test
+    void logout_noToken_returns401() throws Exception {
+        mvc.perform(post("/api/auth/logout")
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content("{\"refreshToken\":\"valid-refresh-token\"}"))
+                .andExpect(status().isUnauthorized());
+    }
+
+    @Test
+    void logout_keycloakRejects_returns401() throws Exception {
+        doThrow(new org.springframework.web.client.HttpClientErrorException(
+                org.springframework.http.HttpStatus.BAD_REQUEST, "invalid_token"))
+                .when(keycloakTokenService).logout(anyString());
+
+        mvc.perform(post("/api/auth/logout")
+                        .with(jwt())
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content("{\"refreshToken\":\"bad-refresh-token\"}"))
                 .andExpect(status().isUnauthorized());
     }
 }

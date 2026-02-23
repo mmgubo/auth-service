@@ -52,7 +52,7 @@ A stateless Spring Boot 3.x REST API secured with Spring Security 6 and Keycloak
 auth-service/
 ├── docker-compose.yml                          # Keycloak dev server
 ├── pom.xml
-├── auth-service.postman_collection.json        # Postman collection (18 requests)
+├── auth-service.postman_collection.json        # Postman collection (21 requests)
 └── src/
     ├── main/
     │   ├── java/com/example/authservice/
@@ -145,16 +145,17 @@ Example: a Keycloak realm role `admin` becomes `ROLE_ADMIN` in Spring Security, 
 | GET | `/api/public/health` | Service liveness check |
 | GET | `/api/public/info` | Service metadata |
 
-### Token — no token required
+### Token — lifecycle endpoints
 
-| Method | Path | Description |
-|---|---|---|
-| POST | `/api/auth/refresh` | Exchange a Keycloak refresh token for a new access + refresh token pair |
+Both endpoints share the same request body:
 
-Request body:
 ```json
 { "refreshToken": "<keycloak-refresh-token>" }
 ```
+
+#### `POST /api/auth/refresh` — no token required
+
+Exchanges an expired access token for a new token pair. Intentionally unauthenticated.
 
 Response:
 ```json
@@ -172,6 +173,18 @@ Response:
 | 200 | Valid refresh token — new token pair returned |
 | 400 | `refreshToken` field is missing or blank |
 | 401 | Keycloak rejected the token (expired, revoked, or invalid) |
+
+#### `POST /api/auth/logout` — valid Bearer token required
+
+Revokes the refresh token at Keycloak, ending the session. Returns `204 No Content`.
+
+> The current access token remains technically valid until its natural expiry (`expires_in`). For public clients Keycloak does not back-channel revoke access tokens. Design clients to discard both tokens on 204.
+
+| Status | Cause |
+|---|---|
+| 204 | Session revoked successfully |
+| 400 | `refreshToken` field is missing or blank |
+| 401 | No valid Bearer token provided |
 
 ### Auth — any valid token
 
@@ -276,14 +289,14 @@ curl -s -X POST http://localhost:8080/api/auth/refresh \
 mvn test
 ```
 
-12 unit tests using `@WebMvcTest` + Spring Security Test's `jwt()` mock — no running Keycloak required.
+16 unit tests using `@WebMvcTest` + Spring Security Test's `jwt()` mock — no running Keycloak required.
 
 | Test class | Coverage |
 |---|---|
 | `PublicControllerTest` | Public endpoints return 200 without a token |
 | `AuthControllerTest` | 401 without token; 200 with valid JWT mock |
 | `AdminControllerTest` | 401 no token; 403 wrong role; 200 with ROLE_ADMIN |
-| `TokenControllerTest` | 200 valid refresh; 400 missing/blank token; 401 Keycloak rejection |
+| `TokenControllerTest` | Refresh: 200 valid, 400 blank, 401 Keycloak rejection — Logout: 204 valid, 400 blank, 401 no bearer, 401 Keycloak rejection |
 
 ---
 

@@ -11,11 +11,11 @@ import org.springframework.web.client.RestClient;
 import java.util.Map;
 
 /**
- * Delegates token operations (refresh) to the Keycloak token endpoint.
+ * Delegates token operations (refresh, logout) to Keycloak's OpenID Connect endpoints.
  *
  * Uses Spring 6.1 {@link RestClient} (synchronous, fluent).
- * If Keycloak returns 4xx (e.g. expired / invalid refresh token), RestClient
- * throws {@link org.springframework.web.client.RestClientResponseException},
+ * If Keycloak returns 4xx, RestClient throws
+ * {@link org.springframework.web.client.RestClientResponseException},
  * which is mapped to HTTP 401 by {@link com.example.authservice.exception.GlobalExceptionHandler}.
  */
 @Service
@@ -23,6 +23,7 @@ public class KeycloakTokenService {
 
     private final RestClient restClient;
     private final String tokenEndpoint;
+    private final String logoutEndpoint;
     private final String clientId;
 
     public KeycloakTokenService(
@@ -32,7 +33,8 @@ public class KeycloakTokenService {
             @Value("${app.keycloak.client-id}") String clientId) {
 
         this.restClient = builder.build();
-        this.tokenEndpoint = authServerUrl + "/realms/" + realm + "/protocol/openid-connect/token";
+        this.tokenEndpoint  = authServerUrl + "/realms/" + realm + "/protocol/openid-connect/token";
+        this.logoutEndpoint = authServerUrl + "/realms/" + realm + "/protocol/openid-connect/logout";
         this.clientId = clientId;
     }
 
@@ -57,6 +59,29 @@ public class KeycloakTokenService {
                 .body(Map.class);
 
         return mapToTokenResponse(body);
+    }
+
+    /**
+     * Invalidates the session at Keycloak by revoking the supplied refresh token.
+     *
+     * After this call the refresh token is dead and the current access token will
+     * stop working once it naturally expires (Keycloak does not back-channel
+     * revoke access tokens by default for public clients).
+     *
+     * @param refreshToken the refresh token to revoke
+     * @throws org.springframework.web.client.RestClientResponseException if Keycloak rejects the request
+     */
+    public void logout(String refreshToken) {
+        MultiValueMap<String, String> form = new LinkedMultiValueMap<>();
+        form.add("client_id",     clientId);
+        form.add("refresh_token", refreshToken);
+
+        restClient.post()
+                .uri(logoutEndpoint)
+                .contentType(MediaType.APPLICATION_FORM_URLENCODED)
+                .body(form)
+                .retrieve()
+                .toBodilessEntity();
     }
 
     // -------------------------------------------------------------------------
