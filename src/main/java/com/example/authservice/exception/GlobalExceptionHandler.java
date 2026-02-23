@@ -6,6 +6,7 @@ import org.springframework.security.access.AccessDeniedException;
 import org.springframework.security.core.AuthenticationException;
 import org.springframework.web.bind.annotation.ExceptionHandler;
 import org.springframework.web.bind.annotation.RestControllerAdvice;
+import org.springframework.web.client.RestClientResponseException;
 
 import java.time.Instant;
 import java.util.Map;
@@ -27,6 +28,16 @@ public class GlobalExceptionHandler {
     public ResponseEntity<Map<String, Object>> handleAuthenticationException(AuthenticationException ex) {
         return ResponseEntity.status(HttpStatus.UNAUTHORIZED).body(errorBody(
                 HttpStatus.UNAUTHORIZED, "Authentication failed: " + ex.getMessage()));
+    }
+
+    /**
+     * Keycloak returned 4xx when the service called /token (e.g. expired or invalid refresh token).
+     * Surface this as 401 so the client knows it must re-authenticate from scratch.
+     */
+    @ExceptionHandler(RestClientResponseException.class)
+    public ResponseEntity<Map<String, Object>> handleRestClientResponseException(RestClientResponseException ex) {
+        return ResponseEntity.status(HttpStatus.UNAUTHORIZED).body(errorBody(
+                HttpStatus.UNAUTHORIZED, "Token refresh failed: " + ex.getMessage()));
     }
 
     // -------------------------------------------------------------------------
