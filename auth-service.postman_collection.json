@@ -1,0 +1,568 @@
+{
+  "info": {
+    "_postman_id": "a1b2c3d4-e5f6-7890-abcd-ef1234567890",
+    "name": "Auth Service - Keycloak",
+    "description": "End-to-end collection for the Spring Boot auth service backed by Keycloak.\n\n**Setup**\n1. Start Keycloak: `docker compose up -d`\n2. Start the Spring Boot service: `mvn spring-boot:run`\n3. Set the `username` and `password` variables to a valid Keycloak user.\n4. Run **Get Token** first — the access token is saved automatically to `accessToken` and all subsequent requests use it via the collection-level Bearer auth.",
+    "schema": "https://schema.getpostman.com/json/collection/v2.1.0/collection.json"
+  },
+  "variable": [
+    { "key": "baseUrl",      "value": "http://localhost:8080",   "type": "string" },
+    { "key": "keycloakUrl",  "value": "http://localhost:8180",   "type": "string" },
+    { "key": "realm",        "value": "demo-realm",              "type": "string" },
+    { "key": "clientId",     "value": "spring-boot-app",         "type": "string" },
+    { "key": "username",     "value": "alice",                   "type": "string" },
+    { "key": "password",     "value": "secret",                  "type": "string" },
+    { "key": "accessToken",  "value": "",                        "type": "string" }
+  ],
+  "auth": {
+    "type": "bearer",
+    "bearer": [
+      { "key": "token", "value": "{{accessToken}}", "type": "string" }
+    ]
+  },
+  "item": [
+    {
+      "name": "Keycloak",
+      "description": "Obtain and inspect tokens directly from Keycloak.",
+      "item": [
+        {
+          "name": "Get Token (Password Grant)",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "exec": [
+                  "var json = pm.response.json();",
+                  "if (json.access_token) {",
+                  "    pm.collectionVariables.set('accessToken', json.access_token);",
+                  "    console.log('✅ accessToken saved to collection variables');",
+                  "} else {",
+                  "    console.error('❌ No access_token in response:', JSON.stringify(json));",
+                  "}",
+                  "",
+                  "pm.test('Status 200', () => pm.response.to.have.status(200));",
+                  "pm.test('access_token present', () => pm.expect(json.access_token).to.be.a('string'));"
+                ],
+                "type": "text/javascript"
+              }
+            }
+          ],
+          "request": {
+            "auth": { "type": "noauth" },
+            "method": "POST",
+            "header": [
+              { "key": "Content-Type", "value": "application/x-www-form-urlencoded" }
+            ],
+            "body": {
+              "mode": "urlencoded",
+              "urlencoded": [
+                { "key": "grant_type", "value": "password" },
+                { "key": "client_id",  "value": "{{clientId}}" },
+                { "key": "username",   "value": "{{username}}" },
+                { "key": "password",   "value": "{{password}}" }
+              ]
+            },
+            "url": {
+              "raw": "{{keycloakUrl}}/realms/{{realm}}/protocol/openid-connect/token",
+              "host": ["{{keycloakUrl}}"],
+              "path": ["realms", "{{realm}}", "protocol", "openid-connect", "token"]
+            },
+            "description": "Uses the Resource Owner Password Credentials (ROPC) grant to obtain an access token. The test script automatically saves the token to the `accessToken` collection variable."
+          }
+        },
+        {
+          "name": "Get Token (Client Credentials)",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "exec": [
+                  "var json = pm.response.json();",
+                  "if (json.access_token) {",
+                  "    pm.collectionVariables.set('accessToken', json.access_token);",
+                  "    console.log('✅ accessToken saved (client_credentials)');",
+                  "}",
+                  "pm.test('Status 200', () => pm.response.to.have.status(200));"
+                ],
+                "type": "text/javascript"
+              }
+            }
+          ],
+          "request": {
+            "auth": { "type": "noauth" },
+            "method": "POST",
+            "header": [
+              { "key": "Content-Type", "value": "application/x-www-form-urlencoded" }
+            ],
+            "body": {
+              "mode": "urlencoded",
+              "urlencoded": [
+                { "key": "grant_type",    "value": "client_credentials" },
+                { "key": "client_id",     "value": "{{clientId}}" },
+                { "key": "client_secret", "value": "REPLACE_WITH_CLIENT_SECRET" }
+              ]
+            },
+            "url": {
+              "raw": "{{keycloakUrl}}/realms/{{realm}}/protocol/openid-connect/token",
+              "host": ["{{keycloakUrl}}"],
+              "path": ["realms", "{{realm}}", "protocol", "openid-connect", "token"]
+            },
+            "description": "Client credentials grant — requires the client to have 'Service accounts roles' enabled in Keycloak. Replace REPLACE_WITH_CLIENT_SECRET with the actual secret."
+          }
+        },
+        {
+          "name": "Introspect Token",
+          "request": {
+            "auth": { "type": "noauth" },
+            "method": "POST",
+            "header": [
+              { "key": "Content-Type", "value": "application/x-www-form-urlencoded" }
+            ],
+            "body": {
+              "mode": "urlencoded",
+              "urlencoded": [
+                { "key": "token",     "value": "{{accessToken}}" },
+                { "key": "client_id", "value": "{{clientId}}" }
+              ]
+            },
+            "url": {
+              "raw": "{{keycloakUrl}}/realms/{{realm}}/protocol/openid-connect/token/introspect",
+              "host": ["{{keycloakUrl}}"],
+              "path": ["realms", "{{realm}}", "protocol", "openid-connect", "token", "introspect"]
+            },
+            "description": "Ask Keycloak whether the current accessToken is active and show its metadata."
+          }
+        },
+        {
+          "name": "OIDC UserInfo",
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": {
+              "raw": "{{keycloakUrl}}/realms/{{realm}}/protocol/openid-connect/userinfo",
+              "host": ["{{keycloakUrl}}"],
+              "path": ["realms", "{{realm}}", "protocol", "openid-connect", "userinfo"]
+            },
+            "description": "Fetch the OIDC UserInfo endpoint on Keycloak directly using the Bearer token."
+          }
+        }
+      ]
+    },
+    {
+      "name": "Public",
+      "description": "No authentication required.",
+      "item": [
+        {
+          "name": "Health",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "exec": [
+                  "pm.test('Status 200', () => pm.response.to.have.status(200));",
+                  "pm.test('status is UP', () => {",
+                  "    pm.expect(pm.response.json().status).to.eql('UP');",
+                  "});"
+                ],
+                "type": "text/javascript"
+              }
+            }
+          ],
+          "request": {
+            "auth": { "type": "noauth" },
+            "method": "GET",
+            "header": [],
+            "url": {
+              "raw": "{{baseUrl}}/api/public/health",
+              "host": ["{{baseUrl}}"],
+              "path": ["api", "public", "health"]
+            }
+          }
+        },
+        {
+          "name": "Info",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "exec": [
+                  "pm.test('Status 200', () => pm.response.to.have.status(200));",
+                  "pm.test('idp is Keycloak', () => {",
+                  "    pm.expect(pm.response.json().idp).to.eql('Keycloak');",
+                  "});"
+                ],
+                "type": "text/javascript"
+              }
+            }
+          ],
+          "request": {
+            "auth": { "type": "noauth" },
+            "method": "GET",
+            "header": [],
+            "url": {
+              "raw": "{{baseUrl}}/api/public/info",
+              "host": ["{{baseUrl}}"],
+              "path": ["api", "public", "info"]
+            }
+          }
+        }
+      ]
+    },
+    {
+      "name": "Auth",
+      "description": "Endpoints that expose the current user's identity from the JWT. Requires a valid Bearer token.",
+      "item": [
+        {
+          "name": "Me",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "exec": [
+                  "pm.test('Status 200', () => pm.response.to.have.status(200));",
+                  "pm.test('preferredUsername present', () => {",
+                  "    pm.expect(pm.response.json().preferredUsername).to.be.a('string');",
+                  "});",
+                  "pm.test('roles is array', () => {",
+                  "    pm.expect(pm.response.json().roles).to.be.an('array');",
+                  "});"
+                ],
+                "type": "text/javascript"
+              }
+            }
+          ],
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": {
+              "raw": "{{baseUrl}}/api/auth/me",
+              "host": ["{{baseUrl}}"],
+              "path": ["api", "auth", "me"]
+            },
+            "description": "Returns a `UserInfo` object (sub, preferredUsername, email, firstName, lastName, roles) extracted from the JWT."
+          }
+        },
+        {
+          "name": "Token Info (raw claims)",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "exec": [
+                  "pm.test('Status 200', () => pm.response.to.have.status(200));",
+                  "pm.test('sub present', () => {",
+                  "    pm.expect(pm.response.json().sub).to.be.a('string');",
+                  "});",
+                  "pm.test('realm_access present', () => {",
+                  "    pm.expect(pm.response.json().realm_access).to.be.an('object');",
+                  "});"
+                ],
+                "type": "text/javascript"
+              }
+            }
+          ],
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": {
+              "raw": "{{baseUrl}}/api/auth/token-info",
+              "host": ["{{baseUrl}}"],
+              "path": ["api", "auth", "token-info"]
+            },
+            "description": "Returns the raw JWT claims map as received from Keycloak. Useful for debugging the token structure."
+          }
+        },
+        {
+          "name": "Principal",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "exec": [
+                  "pm.test('Status 200', () => pm.response.to.have.status(200));",
+                  "pm.test('principal present', () => {",
+                  "    pm.expect(pm.response.json().principal).to.be.a('string');",
+                  "});"
+                ],
+                "type": "text/javascript"
+              }
+            }
+          ],
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": {
+              "raw": "{{baseUrl}}/api/auth/principal",
+              "host": ["{{baseUrl}}"],
+              "path": ["api", "auth", "principal"]
+            },
+            "description": "Returns the resolved principal name (preferred_username from the JWT)."
+          }
+        },
+        {
+          "name": "Me - No Token (expect 401)",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "exec": [
+                  "pm.test('Status 401', () => pm.response.to.have.status(401));"
+                ],
+                "type": "text/javascript"
+              }
+            }
+          ],
+          "request": {
+            "auth": { "type": "noauth" },
+            "method": "GET",
+            "header": [],
+            "url": {
+              "raw": "{{baseUrl}}/api/auth/me",
+              "host": ["{{baseUrl}}"],
+              "path": ["api", "auth", "me"]
+            },
+            "description": "Verifies that /api/auth/me returns 401 when no token is provided."
+          }
+        }
+      ]
+    },
+    {
+      "name": "User",
+      "description": "Endpoints accessible to any authenticated user.",
+      "item": [
+        {
+          "name": "Profile",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "exec": [
+                  "pm.test('Status 200', () => pm.response.to.have.status(200));",
+                  "pm.test('username present', () => {",
+                  "    pm.expect(pm.response.json().username).to.be.a('string');",
+                  "});"
+                ],
+                "type": "text/javascript"
+              }
+            }
+          ],
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": {
+              "raw": "{{baseUrl}}/api/user/profile",
+              "host": ["{{baseUrl}}"],
+              "path": ["api", "user", "profile"]
+            }
+          }
+        },
+        {
+          "name": "Greet",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "exec": [
+                  "pm.test('Status 200', () => pm.response.to.have.status(200));",
+                  "pm.test('greeting returned', () => {",
+                  "    pm.expect(pm.response.text()).to.include('Hello');",
+                  "});"
+                ],
+                "type": "text/javascript"
+              }
+            }
+          ],
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": {
+              "raw": "{{baseUrl}}/api/user/greet",
+              "host": ["{{baseUrl}}"],
+              "path": ["api", "user", "greet"]
+            }
+          }
+        },
+        {
+          "name": "Restricted (requires USER role)",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "exec": [
+                  "pm.test('200 or 403 depending on role', () => {",
+                  "    pm.expect([200, 403]).to.include(pm.response.code);",
+                  "});"
+                ],
+                "type": "text/javascript"
+              }
+            }
+          ],
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": {
+              "raw": "{{baseUrl}}/api/user/restricted",
+              "host": ["{{baseUrl}}"],
+              "path": ["api", "user", "restricted"]
+            },
+            "description": "Returns 200 if the token contains ROLE_USER, 403 otherwise."
+          }
+        }
+      ]
+    },
+    {
+      "name": "Admin",
+      "description": "Endpoints restricted to users with the ADMIN role (ROLE_ADMIN). Returns 403 for any other role.",
+      "item": [
+        {
+          "name": "Dashboard",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "exec": [
+                  "pm.test('Status 200', () => pm.response.to.have.status(200));",
+                  "pm.test('message present', () => {",
+                  "    pm.expect(pm.response.json().message).to.be.a('string');",
+                  "});",
+                  "pm.test('adminUser present', () => {",
+                  "    pm.expect(pm.response.json().adminUser).to.be.a('string');",
+                  "});"
+                ],
+                "type": "text/javascript"
+              }
+            }
+          ],
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": {
+              "raw": "{{baseUrl}}/api/admin/dashboard",
+              "host": ["{{baseUrl}}"],
+              "path": ["api", "admin", "dashboard"]
+            }
+          }
+        },
+        {
+          "name": "List Users",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "exec": [
+                  "pm.test('Status 200', () => pm.response.to.have.status(200));",
+                  "pm.test('response is array', () => {",
+                  "    pm.expect(pm.response.json()).to.be.an('array');",
+                  "});"
+                ],
+                "type": "text/javascript"
+              }
+            }
+          ],
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": {
+              "raw": "{{baseUrl}}/api/admin/users",
+              "host": ["{{baseUrl}}"],
+              "path": ["api", "admin", "users"]
+            }
+          }
+        },
+        {
+          "name": "Token Audit",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "exec": [
+                  "pm.test('Status 200', () => pm.response.to.have.status(200));",
+                  "pm.test('sub present', () => {",
+                  "    pm.expect(pm.response.json().sub).to.be.a('string');",
+                  "});"
+                ],
+                "type": "text/javascript"
+              }
+            }
+          ],
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": {
+              "raw": "{{baseUrl}}/api/admin/token-audit",
+              "host": ["{{baseUrl}}"],
+              "path": ["api", "admin", "token-audit"]
+            },
+            "description": "Returns the raw JWT claims of the calling admin — useful for auditing."
+          }
+        },
+        {
+          "name": "Dashboard - No Token (expect 401)",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "exec": [
+                  "pm.test('Status 401', () => pm.response.to.have.status(401));"
+                ],
+                "type": "text/javascript"
+              }
+            }
+          ],
+          "request": {
+            "auth": { "type": "noauth" },
+            "method": "GET",
+            "header": [],
+            "url": {
+              "raw": "{{baseUrl}}/api/admin/dashboard",
+              "host": ["{{baseUrl}}"],
+              "path": ["api", "admin", "dashboard"]
+            },
+            "description": "Verifies that admin endpoints return 401 with no token."
+          }
+        },
+        {
+          "name": "Dashboard - User Role (expect 403)",
+          "event": [
+            {
+              "listen": "pre-request",
+              "script": {
+                "exec": [
+                  "// Obtain a token for a USER-role account and paste it below,",
+                  "// or update the username/password variables to a non-admin user",
+                  "// before running this request."
+                ],
+                "type": "text/javascript"
+              }
+            },
+            {
+              "listen": "test",
+              "script": {
+                "exec": [
+                  "pm.test('Status 403', () => pm.response.to.have.status(403));"
+                ],
+                "type": "text/javascript"
+              }
+            }
+          ],
+          "request": {
+            "method": "GET",
+            "header": [
+              {
+                "key": "Authorization",
+                "value": "Bearer REPLACE_WITH_USER_ROLE_TOKEN",
+                "description": "Paste a token for a user who only has ROLE_USER (not ROLE_ADMIN)"
+              }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}/api/admin/dashboard",
+              "host": ["{{baseUrl}}"],
+              "path": ["api", "admin", "dashboard"]
+            },
+            "description": "Verifies that a USER-role token is rejected with 403 on an ADMIN endpoint."
+          }
+        }
+      ]
+    }
+  ]
+}

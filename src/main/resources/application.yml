@@ -1,0 +1,35 @@
+server:
+  port: 8080
+
+spring:
+  application:
+    name: auth-service
+  security:
+    oauth2:
+      resourceserver:
+        jwt:
+          # Keycloak OIDC discovery endpoint — Spring validates tokens and fetches JWKS automatically
+          issuer-uri: http://localhost:8180/realms/demo-realm
+          jwk-set-uri: http://localhost:8180/realms/demo-realm/protocol/openid-connect/certs
+
+# App-level Keycloak properties (bound via @ConfigurationProperties or @Value)
+app:
+  keycloak:
+    realm: demo-realm
+    auth-server-url: http://localhost:8180
+    # Client ID must match the client created in Keycloak
+    client-id: spring-boot-app
+
+management:
+  endpoints:
+    web:
+      exposure:
+        include: health,info,metrics
+  endpoint:
+    health:
+      show-details: always
+
+logging:
+  level:
+    org.springframework.security: INFO
+    com.example.authservice: DEBUG
