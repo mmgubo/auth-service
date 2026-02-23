@@ -52,7 +52,7 @@ A stateless Spring Boot 3.x REST API secured with Spring Security 6 and Keycloak
 auth-service/
 ├── docker-compose.yml                          # Keycloak dev server
 ├── pom.xml
-├── auth-service.postman_collection.json        # Postman collection (15 requests)
+├── auth-service.postman_collection.json        # Postman collection (18 requests)
 └── src/
     ├── main/
     │   ├── java/com/example/authservice/
@@ -61,21 +61,27 @@ auth-service/
     │   │   │   ├── SecurityConfig.java                      # Filter chain, CORS, session policy
     │   │   │   └── KeycloakJwtAuthenticationConverter.java  # Extracts Keycloak roles → ROLE_*
     │   │   ├── controller/
-    │   │   │   ├── PublicController.java    # /api/public/**  — unauthenticated
-    │   │   │   ├── AuthController.java      # /api/auth/**    — any valid token
-    │   │   │   ├── UserController.java      # /api/user/**    — any valid token
-    │   │   │   └── AdminController.java     # /api/admin/**   — ROLE_ADMIN only
+    │   │   │   ├── PublicController.java    # /api/public/**       — unauthenticated
+    │   │   │   ├── AuthController.java      # /api/auth/**         — any valid token
+    │   │   │   ├── TokenController.java     # /api/auth/refresh    — unauthenticated
+    │   │   │   ├── UserController.java      # /api/user/**         — any valid token
+    │   │   │   └── AdminController.java     # /api/admin/**        — ROLE_ADMIN only
     │   │   ├── exception/
-    │   │   │   └── GlobalExceptionHandler.java  # 401 / 403 → structured JSON
-    │   │   └── model/
-    │   │       └── UserInfo.java            # Record DTO returned by /api/auth/me
+    │   │   │   └── GlobalExceptionHandler.java  # 401 / 403 / Keycloak errors → structured JSON
+    │   │   ├── model/
+    │   │   │   ├── UserInfo.java            # Record DTO returned by /api/auth/me
+    │   │   │   ├── RefreshTokenRequest.java # Request body for /api/auth/refresh
+    │   │   │   └── TokenResponse.java       # Response body for /api/auth/refresh
+    │   │   └── service/
+    │   │       └── KeycloakTokenService.java  # Calls Keycloak /token endpoint via RestClient
     │   └── resources/
     │       └── application.yml
     └── test/
         └── java/com/example/authservice/controller/
             ├── PublicControllerTest.java
             ├── AuthControllerTest.java
-            └── AdminControllerTest.java
+            ├── AdminControllerTest.java
+            └── TokenControllerTest.java
 ```
 
 ---
@@ -109,6 +115,7 @@ Change `issuer-uri`, `jwk-set-uri`, and `client-id` to match your Keycloak setup
 | `GET /api/public/**` | Permit all (no token required) |
 | `GET /actuator/health` | Permit all |
 | `GET /actuator/info` | Permit all |
+| `POST /api/auth/refresh` | Permit all — access token is expired when refresh is needed |
 | `GET /api/admin/**` | `hasRole("ADMIN")` — filter chain + `@PreAuthorize` |
 | Everything else | Authenticated (any valid JWT) |
 
@@ -137,6 +144,34 @@ Example: a Keycloak realm role `admin` becomes `ROLE_ADMIN` in Spring Security, 
 |---|---|---|
 | GET | `/api/public/health` | Service liveness check |
 | GET | `/api/public/info` | Service metadata |
+
+### Token — no token required
+
+| Method | Path | Description |
+|---|---|---|
+| POST | `/api/auth/refresh` | Exchange a Keycloak refresh token for a new access + refresh token pair |
+
+Request body:
+```json
+{ "refreshToken": "<keycloak-refresh-token>" }
+```
+
+Response:
+```json
+{
+  "access_token": "...",
+  "refresh_token": "...",
+  "token_type": "Bearer",
+  "expires_in": 300,
+  "refresh_expires_in": 1800
+}
+```
+
+| Status | Cause |
+|---|---|
+| 200 | Valid refresh token — new token pair returned |
+| 400 | `refreshToken` field is missing or blank |
+| 401 | Keycloak rejected the token (expired, revoked, or invalid) |
 
 ### Auth — any valid token
 
@@ -224,6 +259,15 @@ curl -H "Authorization: Bearer $TOKEN" http://localhost:8080/api/auth/me
 curl -H "Authorization: Bearer $TOKEN" http://localhost:8080/api/admin/dashboard
 ```
 
+### 6. Refresh an expired access token
+
+```bash
+REFRESH_TOKEN=<paste refresh_token from step 3>
+curl -s -X POST http://localhost:8080/api/auth/refresh \
+  -H "Content-Type: application/json" \
+  -d "{\"refreshToken\": \"$REFRESH_TOKEN\"}" | jq .
+```
+
 ---
 
 ## Running Tests
@@ -232,13 +276,14 @@ curl -H "Authorization: Bearer $TOKEN" http://localhost:8080/api/admin/dashboard
 mvn test
 ```
 
-8 unit tests using `@WebMvcTest` + Spring Security Test's `jwt()` mock — no running Keycloak required.
+12 unit tests using `@WebMvcTest` + Spring Security Test's `jwt()` mock — no running Keycloak required.
 
 | Test class | Coverage |
 |---|---|
 | `PublicControllerTest` | Public endpoints return 200 without a token |
 | `AuthControllerTest` | 401 without token; 200 with valid JWT mock |
 | `AdminControllerTest` | 401 no token; 403 wrong role; 200 with ROLE_ADMIN |
+| `TokenControllerTest` | 200 valid refresh; 400 missing/blank token; 401 Keycloak rejection |
 
 ---
 
@@ -246,8 +291,9 @@ mvn test
 
 Import `auth-service.postman_collection.json` into Postman.
 
-1. Run **Keycloak → Get Token (Password Grant)** — saves `accessToken` automatically.
+1. Run **Keycloak → Get Token (Password Grant)** — saves both `accessToken` and `refreshToken` automatically.
 2. All other requests inherit Bearer auth from the collection.
-3. Negative-case requests (401, 403) override auth individually.
+3. When the access token expires, run **Auth → Refresh Token** — both variables are rotated automatically.
+4. Negative-case requests (401, 403) override auth individually.
 
 Collection variables to configure: `baseUrl`, `keycloakUrl`, `realm`, `clientId`, `username`, `password`.
