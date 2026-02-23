@@ -12,7 +12,8 @@
     { "key": "clientId",     "value": "spring-boot-app",         "type": "string" },
     { "key": "username",     "value": "alice",                   "type": "string" },
     { "key": "password",     "value": "secret",                  "type": "string" },
-    { "key": "accessToken",  "value": "",                        "type": "string" }
+    { "key": "accessToken",  "value": "",                        "type": "string" },
+    { "key": "refreshToken", "value": "",                        "type": "string" }
   ],
   "auth": {
     "type": "bearer",
@@ -39,9 +40,14 @@
                   "} else {",
                   "    console.error('❌ No access_token in response:', JSON.stringify(json));",
                   "}",
+                  "if (json.refresh_token) {",
+                  "    pm.collectionVariables.set('refreshToken', json.refresh_token);",
+                  "    console.log('✅ refreshToken saved to collection variables');",
+                  "}",
                   "",
                   "pm.test('Status 200', () => pm.response.to.have.status(200));",
-                  "pm.test('access_token present', () => pm.expect(json.access_token).to.be.a('string'));"
+                  "pm.test('access_token present', () => pm.expect(json.access_token).to.be.a('string'));",
+                  "pm.test('refresh_token present', () => pm.expect(json.refresh_token).to.be.a('string'));"
                 ],
                 "type": "text/javascript"
               }
@@ -297,6 +303,120 @@
               "path": ["api", "auth", "principal"]
             },
             "description": "Returns the resolved principal name (preferred_username from the JWT)."
+          }
+        },
+        {
+          "name": "Refresh Token",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "exec": [
+                  "pm.test('Status 200', () => pm.response.to.have.status(200));",
+                  "pm.test('access_token present', () => {",
+                  "    pm.expect(pm.response.json().access_token).to.be.a('string');",
+                  "});",
+                  "pm.test('refresh_token present', () => {",
+                  "    pm.expect(pm.response.json().refresh_token).to.be.a('string');",
+                  "});",
+                  "pm.test('expires_in present', () => {",
+                  "    pm.expect(pm.response.json().expires_in).to.be.a('number');",
+                  "});",
+                  "var json = pm.response.json();",
+                  "if (json.access_token) {",
+                  "    pm.collectionVariables.set('accessToken', json.access_token);",
+                  "    console.log('✅ accessToken refreshed and saved');",
+                  "}",
+                  "if (json.refresh_token) {",
+                  "    pm.collectionVariables.set('refreshToken', json.refresh_token);",
+                  "    console.log('✅ refreshToken rotated and saved');",
+                  "}"
+                ],
+                "type": "text/javascript"
+              }
+            }
+          ],
+          "request": {
+            "auth": { "type": "noauth" },
+            "method": "POST",
+            "header": [
+              { "key": "Content-Type", "value": "application/json" }
+            ],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"refreshToken\": \"{{refreshToken}}\"\n}",
+              "options": { "raw": { "language": "json" } }
+            },
+            "url": {
+              "raw": "{{baseUrl}}/api/auth/refresh",
+              "host": ["{{baseUrl}}"],
+              "path": ["api", "auth", "refresh"]
+            },
+            "description": "Exchanges the stored `refreshToken` for a new access + refresh token pair. Both `accessToken` and `refreshToken` collection variables are updated automatically by the test script.\n\nNo Authorization header is needed — the endpoint is intentionally unauthenticated since the access token is expired when a refresh is required."
+          }
+        },
+        {
+          "name": "Refresh Token - Missing Body (expect 400)",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "exec": [
+                  "pm.test('Status 400', () => pm.response.to.have.status(400));"
+                ],
+                "type": "text/javascript"
+              }
+            }
+          ],
+          "request": {
+            "auth": { "type": "noauth" },
+            "method": "POST",
+            "header": [
+              { "key": "Content-Type", "value": "application/json" }
+            ],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"refreshToken\": \"\"\n}",
+              "options": { "raw": { "language": "json" } }
+            },
+            "url": {
+              "raw": "{{baseUrl}}/api/auth/refresh",
+              "host": ["{{baseUrl}}"],
+              "path": ["api", "auth", "refresh"]
+            },
+            "description": "Verifies that an empty refreshToken field returns HTTP 400."
+          }
+        },
+        {
+          "name": "Refresh Token - Invalid Token (expect 401)",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "exec": [
+                  "pm.test('Status 401', () => pm.response.to.have.status(401));"
+                ],
+                "type": "text/javascript"
+              }
+            }
+          ],
+          "request": {
+            "auth": { "type": "noauth" },
+            "method": "POST",
+            "header": [
+              { "key": "Content-Type", "value": "application/json" }
+            ],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"refreshToken\": \"this-is-not-a-valid-refresh-token\"\n}",
+              "options": { "raw": { "language": "json" } }
+            },
+            "url": {
+              "raw": "{{baseUrl}}/api/auth/refresh",
+              "host": ["{{baseUrl}}"],
+              "path": ["api", "auth", "refresh"]
+            },
+            "description": "Verifies that an expired or invalid refresh token is rejected by Keycloak and the service surfaces HTTP 401."
           }
         },
         {
